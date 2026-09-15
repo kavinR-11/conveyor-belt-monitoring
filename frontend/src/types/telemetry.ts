@@ -65,6 +65,26 @@ export interface ElectricalReading {
 // Aggregated telemetry frame — what the frontend state holds at one instant
 // -----------------------------------------------------------------------------
 
+export interface MLPrediction {
+  classification: string;
+  confidence: number;
+  anomaly_score: number;
+  is_anomaly: boolean;
+  severity: 'NORMAL' | 'WARNING' | 'CRITICAL' | 'EMERGENCY';
+  failed_component: string;
+  failure_cause: string;
+}
+
+export interface ActiveAlert {
+  severity: 'NORMAL' | 'WARNING' | 'CRITICAL' | 'EMERGENCY';
+  classification: string;
+  failed_component: string;
+  failure_cause: string;
+  confidence: number;
+  sms_sent: boolean;
+  timestamp: string;
+}
+
 export interface TelemetryFrame {
   vibration: VibrationReading;
   load: LoadReading;
@@ -75,6 +95,10 @@ export interface TelemetryFrame {
   timestamp: string;
   /** True when this frame is mock/demo data, not from the backend */
   isMock: boolean;
+  /** Real-time ML prediction */
+  ml?: MLPrediction;
+  /** Active alert with component failure details */
+  alert?: ActiveAlert | null;
 }
 
 // -----------------------------------------------------------------------------

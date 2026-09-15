@@ -140,39 +140,161 @@ export const Overview: React.FC = () => {
 
         {/* Right Panel (4 cols) */}
         <div className="xl:col-span-4 flex flex-col gap-space-md">
+          {/* ML Real-Time Diagnosis Card */}
+          <div className={`p-space-md rounded-lg shadow-sm border transition-all ${
+            frame.alert?.severity === 'EMERGENCY' || frame.ml?.severity === 'EMERGENCY'
+              ? 'bg-[#fef2f2] border-[#dc2626] animate-pulse'
+              : frame.alert?.severity === 'CRITICAL' || frame.ml?.severity === 'CRITICAL'
+                ? 'bg-[#fff7ed] border-[#ea580c]'
+                : frame.alert?.severity === 'WARNING' || frame.ml?.severity === 'WARNING'
+                  ? 'bg-[#fffbeb] border-[#f59e0b]'
+                  : 'bg-surface-container-lowest border-transparent'
+          }`}>
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-outline-variant">
+              <div className="flex items-center gap-2">
+                <span className={`material-symbols-outlined text-[20px] ${
+                  frame.alert?.severity === 'EMERGENCY' || frame.ml?.severity === 'EMERGENCY'
+                    ? 'text-[#dc2626]'
+                    : frame.alert?.severity === 'CRITICAL' || frame.ml?.severity === 'CRITICAL'
+                      ? 'text-[#ea580c]'
+                      : 'text-primary'
+                }`}>neurology</span>
+                <span className="font-headline-sm text-headline-sm text-primary uppercase">ML PART DIAGNOSIS</span>
+              </div>
+              <span className={`font-label-sm text-label-sm font-bold px-2 py-0.5 rounded ${
+                frame.alert?.severity === 'EMERGENCY' || frame.ml?.severity === 'EMERGENCY'
+                  ? 'bg-[#dc2626] text-white animate-bounce'
+                  : frame.alert?.severity === 'CRITICAL' || frame.ml?.severity === 'CRITICAL'
+                    ? 'bg-[#ea580c] text-white'
+                    : frame.alert?.severity === 'WARNING' || frame.ml?.severity === 'WARNING'
+                      ? 'bg-[#f59e0b] text-white'
+                      : 'bg-[#10b981]/20 text-[#047857]'
+              }`}>
+                {frame.alert?.severity || frame.ml?.severity || 'NORMAL'}
+              </span>
+            </div>
+
+            {/* Diagnostic Details */}
+            <div className="space-y-2">
+              <div>
+                <div className="font-label-sm text-label-sm text-secondary uppercase">Calculated Failing Part:</div>
+                <div className={`font-headline-sm text-headline-sm font-bold ${
+                  (frame.alert?.failed_component || frame.ml?.failed_component) &&
+                  (frame.alert?.failed_component !== 'ALL SYSTEMS OPERATIONAL' && frame.ml?.failed_component !== 'ALL SYSTEMS OPERATIONAL')
+                    ? 'text-[#dc2626]'
+                    : 'text-on-surface'
+                }`}>
+                  {frame.alert?.failed_component || frame.ml?.failed_component || 'ALL SYSTEMS NOMINAL'}
+                </div>
+              </div>
+
+              <div>
+                <div className="font-label-sm text-label-sm text-secondary uppercase">ML Defect Classification:</div>
+                <div className="font-label-md text-label-md font-semibold text-on-surface flex items-center justify-between">
+                  <span>{frame.alert?.classification || frame.ml?.classification || 'NORMAL'}</span>
+                  {frame.ml && (
+                    <span className="font-mono text-xs text-secondary">
+                      Conf: {(frame.ml.confidence * 100).toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {(frame.alert?.failure_cause || frame.ml?.failure_cause) && (
+                <div className="bg-surface-container-low p-2 rounded text-xs">
+                  <span className="font-bold text-secondary">Sensor Triggers: </span>
+                  <span className="text-on-surface">{frame.alert?.failure_cause || frame.ml?.failure_cause}</span>
+                </div>
+              )}
+
+              {/* SMS Notification Banner */}
+              {(frame.alert?.severity === 'EMERGENCY' || frame.alert?.severity === 'CRITICAL') && (
+                <div className="bg-[#dc2626]/10 border border-[#dc2626]/30 p-2 rounded flex items-center gap-2 text-xs text-[#b91c1c] font-semibold">
+                  <span className="material-symbols-outlined text-[16px]">sms</span>
+                  <span>SMS alert dispatched to Admin & Maint (+917305198655)</span>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Subsystem Status */}
           <div className="bg-surface-container-lowest p-space-md rounded-lg shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between pb-2 mb-2 bg-surface-container-low px-2 py-1.5 rounded">
               <span className="font-headline-sm text-headline-sm text-primary uppercase">SUBSYSTEM STATUS</span>
-              <span className="font-label-sm text-label-sm text-secondary uppercase font-bold">ALL INTERLOCKS OK</span>
+              <span className="font-label-sm text-label-sm text-secondary uppercase font-bold">
+                {frame.alert?.severity === 'EMERGENCY' ? 'TRIP RISK' : 'HEALTH MONITOR'}
+              </span>
             </div>
             <div className="flex flex-col gap-1.5">
-              {[
-                { name: 'CONVEYOR MECHANICAL', status: 'RUNNING', pulse: true },
-                { name: '12V DC MOTOR DRIVE', status: 'ACTIVE' },
-                { name: 'LOAD CELLS (HX711 DUAL)', status: 'OK' },
-                { name: 'MPU6050 I2C BUS', status: 'COMM OK' },
-                { name: 'SPEED OPTICAL ENCODER', status: 'PULSE SYNC' },
-                { name: 'EDGE BACKEND (RPI 4)', status: '24ms LATENCY', style: 'neutral' },
-                { name: 'MQTT BROKER (TCP:1883)', status: 'CONNECTED' },
-                { name: 'YOLOV8N-SEG VISION', status: 'STANDBY', style: 'info' },
-              ].map((item) => (
-                <div key={item.name} className="flex items-center justify-between px-2 py-1 bg-surface-container-low rounded">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${
-                      item.style === 'info' ? 'bg-[#3b82f6]' : 'bg-[#10b981]'
-                    } ${item.pulse ? 'animate-pulse' : ''}`} />
-                    <span className="font-label-sm text-label-sm font-semibold text-on-surface">{item.name}</span>
+              {(() => {
+                const failed = (frame.alert?.failed_component || frame.ml?.failed_component || '').toUpperCase();
+                const isEmergency = frame.alert?.severity === 'EMERGENCY' || frame.ml?.severity === 'EMERGENCY';
+                const isMotorFault = failed.includes('MOTOR');
+                const isBeltFault = failed.includes('LOAD') || failed.includes('TRACKING') || failed.includes('BELT');
+                const isBearingFault = failed.includes('BEARING');
+                const isEstop = failed.includes('ESTOP') || failed.includes('EMERGENCY STOP');
+
+                const items = [
+                  {
+                    name: 'CONVEYOR MECHANICAL',
+                    status: isEstop ? 'E-STOP TRIPPED' : 'RUNNING',
+                    style: isEstop ? 'danger' : 'normal',
+                    pulse: isEstop,
+                  },
+                  {
+                    name: '12V DC MOTOR DRIVE',
+                    status: isMotorFault ? (isEmergency ? 'JAM / EMERGENCY' : 'OVERCURRENT') : 'ACTIVE',
+                    style: isMotorFault ? 'danger' : 'normal',
+                    pulse: isMotorFault,
+                  },
+                  {
+                    name: 'LOAD CELLS (HX711 DUAL)',
+                    status: isBeltFault ? (isEmergency ? 'RUNOFF / EMERGENCY' : 'IMBALANCE') : 'OK',
+                    style: isBeltFault ? 'danger' : 'normal',
+                    pulse: isBeltFault,
+                  },
+                  {
+                    name: 'MPU6050 I2C BUS',
+                    status: isBearingFault ? 'BEARING VIB HIGH' : 'COMM OK',
+                    style: isBearingFault ? 'danger' : 'normal',
+                    pulse: isBearingFault,
+                  },
+                  { name: 'SPEED OPTICAL ENCODER', status: 'PULSE SYNC', style: 'normal' },
+                  { name: 'EDGE GATEWAY (ESP32 → RPI)', status: 'ACTIVE', style: 'neutral' },
+                  { name: 'MQTT BROKER (TCP:1883)', status: 'CONNECTED', style: 'normal' },
+                  {
+                    name: 'AI / ML INFERENCE',
+                    status: isEmergency ? 'ALARM TRIGGERED' : 'ACTIVE',
+                    style: isEmergency ? 'danger' : 'info',
+                  },
+                ];
+
+                return items.map((item) => (
+                  <div key={item.name} className="flex items-center justify-between px-2 py-1 bg-surface-container-low rounded">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${
+                        item.style === 'danger'
+                          ? 'bg-[#dc2626]'
+                          : item.style === 'info'
+                            ? 'bg-[#3b82f6]'
+                            : item.style === 'neutral'
+                              ? 'bg-[#94a3b8]'
+                              : 'bg-[#10b981]'
+                      } ${item.pulse ? 'animate-pulse' : ''}`} />
+                      <span className="font-label-sm text-label-sm font-semibold text-on-surface">{item.name}</span>
+                    </div>
+                    <span className={`font-label-sm text-label-sm font-bold px-1.5 py-0.5 rounded ${
+                      item.style === 'danger'
+                        ? 'text-white bg-[#dc2626]'
+                        : item.style === 'neutral'
+                          ? 'text-on-surface bg-surface-container-highest'
+                          : item.style === 'info'
+                            ? 'text-primary bg-primary-fixed'
+                            : 'text-[#047857] bg-[#10b981]/20'
+                    }`}>{item.status}</span>
                   </div>
-                  <span className={`font-label-sm text-label-sm font-bold px-1.5 py-0.5 rounded ${
-                    item.style === 'neutral'
-                      ? 'text-on-surface bg-surface-container-highest'
-                      : item.style === 'info'
-                        ? 'text-primary bg-primary-fixed'
-                        : 'text-[#047857] bg-[#10b981]/20'
-                  }`}>{item.status}</span>
-                </div>
-              ))}
+                ));
+              })()}
             </div>
           </div>
 

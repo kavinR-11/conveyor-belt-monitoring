@@ -1,0 +1,172 @@
+/* Emergency Annunciator Banner */
+.emergency-annunciator-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 20px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border-left: 6px solid #ef4444;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  animation: banner-glow 1.5s infinite alternate;
+  z-index: 40;
+}
+
+.banner--emergency {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.25) 0%, rgba(185, 28, 28, 0.15) 100%);
+  border-color: #ef4444;
+  outline: 1px solid rgba(239, 68, 68, 0.5);
+}
+
+.banner--critical {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.25) 0%, rgba(180, 83, 9, 0.15) 100%);
+  border-color: #f59e0b;
+  outline: 1px solid rgba(245, 158, 11, 0.5);
+}
+
+.banner-left-indicator {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.banner-pulsing-icon {
+  font-size: 24px;
+  animation: pulse-scale 0.8s infinite alternate ease-in-out;
+}
+
+.banner-text-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.banner-headline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.banner-severity-badge {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #ef4444;
+  color: #ffffff;
+  text-transform: uppercase;
+}
+
+.banner--critical .banner-severity-badge {
+  background: #f59e0b;
+  color: #111827;
+}
+
+.banner-defect-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f87171;
+  letter-spacing: 0.04em;
+}
+
+.banner--critical .banner-defect-name {
+  color: #fbbf24;
+}
+
+.banner-confidence {
+  font-size: 12px;
+  color: #9ca3af;
+  font-family: monospace;
+}
+
+.banner-subline {
+  font-size: 13px;
+  color: #e5e7eb;
+}
+
+.banner-component-tag {
+  color: #fbbf24;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.banner-cause-text {
+  color: #d1d5db;
+}
+
+.banner-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.banner-sms-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-family: monospace;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.sms-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: dot-pulse 1s infinite alternate;
+}
+
+.banner-ack-button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.banner-ack-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #ffffff;
+}
+
+@keyframes banner-glow {
+  0% {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 25px rgba(239, 68, 68, 0.55);
+  }
+}
+
+@keyframes pulse-scale {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.2);
+  }
+}
+
+@keyframes dot-pulse {
+  0% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 1;
+  }
+}

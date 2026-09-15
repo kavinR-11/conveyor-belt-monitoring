@@ -99,8 +99,10 @@ class MLEngine:
             anomaly_score = float(self.iforest_model.decision_function(X_scaled)[0])
             is_anomaly = self.iforest_model.predict(X_scaled)[0] == -1
 
-            # Determine severity
-            severity = self._determine_severity(classification, confidence, anomaly_score, is_anomaly, frame)
+            # Determine component failure and severity level
+            severity, failed_component, failure_cause = self._identify_component_failure(
+                classification, confidence, anomaly_score, is_anomaly, frame
+            )
 
             return {
                 "classification": str(classification),
@@ -108,6 +110,8 @@ class MLEngine:
                 "anomaly_score": round(float(anomaly_score), 4),
                 "is_anomaly": bool(is_anomaly),
                 "severity": str(severity),
+                "failed_component": str(failed_component),
+                "failure_cause": str(failure_cause),
             }
 
         except Exception as e:
@@ -118,6 +122,8 @@ class MLEngine:
                 "anomaly_score": 0.0,
                 "is_anomaly": False,
                 "severity": "NORMAL",
+                "failed_component": "NONE",
+                "failure_cause": str(e),
             }
 
     def _extract_features(self, frame: dict) -> list[float]:
@@ -153,38 +159,103 @@ class MLEngine:
             vib_ratio, vib_total, vib_diff, load_ratio, power_proxy,
         ]
 
-    def _determine_severity(
+    def _identify_component_failure(
         self, classification: str, confidence: float,
         anomaly_score: float, is_anomaly: bool, frame: dict
-    ) -> str:
+    ) -> tuple[str, str, str]:
         """
-        Determine alert severity based on ML output + sensor thresholds.
+        Diagnose the specific failing component and determine severity level.
 
-        EMERGENCY: E-stop active, or high-confidence critical defect
-        CRITICAL:  Defect detected with confidence > 0.85
-        WARNING:   Defect detected with lower confidence, or anomaly flagged
-        NORMAL:    No issues
+        Returns:
+            (severity, failed_component, failure_cause)
         """
-        # E-stop is always EMERGENCY
-        if frame.get("estop_active", False):
-            return "EMERGENCY"
+        vib_left = float(frame.get("vibration_left_g", 0.0))
+        vib_right = float(frame.get("vibration_right_g", 0.0))
+        load_left = float(frame.get("load_left_kg", 0.0))
+        load_right = float(frame.get("load_right_kg", 0.0))
+        load_diff = abs(load_left - load_right)
+        total_load = float(frame.get("total_load_kg", load_left + load_right))
+        current = float(frame.get("current_A", 0.0))
+        ir_left = bool(frame.get("ir_left_blocked", False))
+        ir_right = bool(frame.get("ir_right_blocked", False))
+        estop = bool(frame.get("estop_active", False))
+        fault = bool(frame.get("fault_active", False))
 
-        # Fault flag active
-        if frame.get("fault_active", False):
-            return "CRITICAL"
+        # 1. Emergency Stop Active
+        if estop:
+            return (
+                "EMERGENCY",
+                "EMERGENCY STOP (E-STOP)",
+                "Emergency Stop circuit triggered by operator / safety relay open",
+            )
 
-        # High-confidence defect classification
-        if classification != "NORMAL":
-            if confidence >= 0.85:
-                return "CRITICAL"
-            elif confidence >= 0.65:
-                return "WARNING"
+        # 2. Object / Mechanical Jam Detected (Drive Motor & Gearbox Risk)
+        if classification == "OBJECT/JAM DETECTED":
+            if current >= 2.8 or confidence >= 0.90 or total_load > 12.0:
+                return (
+                    "EMERGENCY",
+                    "DRIVE MOTOR & GEARBOX",
+                    f"Severe Material Jam & Overcurrent ({current:.2f}A, Total Load: {total_load:.2f}kg). Motor burnout risk!",
+                )
+            return (
+                "CRITICAL",
+                "DRIVE MOTOR & GEARBOX",
+                f"Conveyor Jam Detected (Current: {current:.2f}A, Conf: {confidence*100:.1f}%)",
+            )
 
-        # Anomaly detection fallback
+        # 3. Belt Misalignment / Tracking Failure (Load Cells & Belt Edge)
+        if classification == "BELT MISALIGNMENT" or ir_left or ir_right:
+            if load_diff >= 2.0 or (ir_left and ir_right):
+                return (
+                    "EMERGENCY",
+                    "CONVEYOR BELT TRACKING & LOAD CELLS",
+                    f"Severe Belt Runoff! Load delta {load_diff:.2f}kg, Optical Beams Breached. Immediate tear danger!",
+                )
+            if confidence >= 0.85 or load_diff >= 1.0 or ir_left or ir_right:
+                return (
+                    "CRITICAL",
+                    "CONVEYOR BELT TRACKING & LOAD CELLS",
+                    f"Belt Misaligned on Idlers (Load Delta: {load_diff:.2f}kg, IR L/R: {int(ir_left)}/{int(ir_right)})",
+                )
+            return (
+                "WARNING",
+                "CONVEYOR BELT TRACKING",
+                f"Belt Drift Warning (Load Delta: {load_diff:.2f}kg, Conf: {confidence*100:.1f}%)",
+            )
+
+        # 4. Bearing Degradation / Severe Vibration (Head/Tail Pulley)
+        max_vib = max(vib_left, vib_right)
+        if max_vib >= 2.8:
+            which_bearing = "Left Bearing" if vib_left >= vib_right else "Right Bearing"
+            return (
+                "EMERGENCY",
+                f"PULLEY BEARINGS ({which_bearing.upper()})",
+                f"Critical Bearing Vibration ({max_vib:.2f}g)! Seizure imminent!",
+            )
+        if max_vib >= 2.2:
+            which_bearing = "Left Bearing" if vib_left >= vib_right else "Right Bearing"
+            return (
+                "CRITICAL",
+                f"PULLEY BEARINGS ({which_bearing.upper()})",
+                f"High Vibration on {which_bearing} ({max_vib:.2f}g) — Lubrication / Spindle Defect",
+            )
+
+        # 5. Generic Fault / Anomaly Detection Fallback
+        if fault:
+            return (
+                "CRITICAL",
+                "CONVEYOR SAFETY INTERLOCK",
+                "Machine Fault Flag Active from hardware sensor bus",
+            )
+
         if is_anomaly and anomaly_score < -0.15:
-            return "WARNING"
+            return (
+                "WARNING",
+                "ANOMALY IN CONVEYOR DYNAMICS",
+                f"Unsupervised ML flagged out-of-distribution sensor profile (Score: {anomaly_score:.3f})",
+            )
 
-        return "NORMAL"
+        return ("NORMAL", "ALL SYSTEMS OPERATIONAL", "Nominal telemetry parameters")
 
 
 # Singleton instance

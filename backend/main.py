@@ -168,6 +168,8 @@ async def process_and_broadcast_frame(frame: dict, source: str = "SIMULATOR") ->
         message["alert"] = {
             "severity": alert["severity"],
             "classification": alert["classification"],
+            "failed_component": alert.get("failed_component", "CONVEYOR SUBSYSTEM"),
+            "failure_cause": alert.get("failure_cause", ""),
             "confidence": alert["confidence"],
             "sms_sent": alert.get("sms_sent", False),
             "timestamp": alert["timestamp"],

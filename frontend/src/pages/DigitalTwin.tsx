@@ -51,6 +51,8 @@ export const DigitalTwin: React.FC = () => {
             vibration={frame.vibration.rms}
             current={frame.electrical.currentA}
             motorState={frame.machineState}
+            failedComponent={frame.ml?.failed_component}
+            isEmergency={frame.alert?.severity === 'EMERGENCY'}
           />
         </div>
 
@@ -115,9 +117,20 @@ interface TwinProps {
   vibration: number;
   current: number;
   motorState: string;
+  failedComponent?: string;
+  isEmergency?: boolean;
 }
 
-const LiveConveyorTwin: React.FC<TwinProps> = ({ speed, loadLeft, loadRight, vibration, current, motorState }) => {
+const LiveConveyorTwin: React.FC<TwinProps> = ({
+  speed,
+  loadLeft,
+  loadRight,
+  vibration,
+  current,
+  motorState,
+  failedComponent,
+  isEmergency,
+}) => {
   const [tick, setTick] = useState(0);
   const animRef = useRef<number>(0);
   const lastTime = useRef(0);
@@ -140,6 +153,12 @@ const LiveConveyorTwin: React.FC<TwinProps> = ({ speed, loadLeft, loadRight, vib
   const rollerAngle = tick * 3;
   const beltOffset = tick % 24;
   const vibShake = isRunning ? Math.sin(tick * 0.5) * vibration * 0.3 : 0;
+
+  // Failing component flags from ML engine
+  const fcUpper = (failedComponent || '').toUpperCase();
+  const isMotorFail = fcUpper.includes('MOTOR') || fcUpper.includes('JAM');
+  const isLoadCellFail = fcUpper.includes('LOAD CELL') || fcUpper.includes('TRACKING') || fcUpper.includes('MISALIGNMENT');
+  const isBearingFail = fcUpper.includes('BEARING') || fcUpper.includes('PULLEY');
 
   return (
     <div className="w-full bg-surface-container-low rounded-lg p-3 overflow-hidden">
@@ -172,6 +191,20 @@ const LiveConveyorTwin: React.FC<TwinProps> = ({ speed, loadLeft, loadRight, vib
         {/* Background */}
         <rect width="800" height="340" fill="#f8fafc" />
         <rect width="800" height="340" fill="url(#dtGrid)" />
+        {isEmergency && (
+          <rect
+            x="2"
+            y="2"
+            width="796"
+            height="336"
+            rx="6"
+            fill="none"
+            stroke="#dc2626"
+            strokeWidth="4"
+            strokeDasharray="12 6"
+            className="animate-pulse"
+          />
+        )}
 
         {/* Main assembly group with subtle vibration */}
         <g transform={`translate(0, ${vibShake})`}>
@@ -248,40 +281,74 @@ const LiveConveyorTwin: React.FC<TwinProps> = ({ speed, loadLeft, loadRight, vib
 
           {/* ── LOAD CELL 1 (LC-01) ── */}
           <g transform="translate(260, 133)">
-            <rect x="-20" y="0" width="40" height="28" fill="#ffffff" stroke="#10b981" strokeWidth="2.5" rx="3" />
-            <rect x="-14" y="28" width="28" height="20" fill="#d1fae5" stroke="#10b981" strokeWidth="1.5" rx="1" />
-            <circle cx="0" cy="14" r="6" fill="#10b981" opacity="0.8">
-              {isRunning && <animate attributeName="r" values="5;7;5" dur="2s" repeatCount="indefinite" />}
+            <rect
+              x="-20" y="0" width="40" height="28"
+              fill={isLoadCellFail ? '#fee2e2' : '#ffffff'}
+              stroke={isLoadCellFail ? '#ef4444' : '#10b981'}
+              strokeWidth={isLoadCellFail ? '3.5' : '2.5'}
+              rx="3"
+            />
+            <rect
+              x="-14" y="28" width="28" height="20"
+              fill={isLoadCellFail ? '#fca5a5' : '#d1fae5'}
+              stroke={isLoadCellFail ? '#ef4444' : '#10b981'}
+              strokeWidth="1.5"
+              rx="1"
+            />
+            <circle cx="0" cy="14" r="6" fill={isLoadCellFail ? '#ef4444' : '#10b981'} opacity="0.85">
+              {isRunning && <animate attributeName="r" values="5;8;5" dur={isLoadCellFail ? '0.8s' : '2s'} repeatCount="indefinite" />}
             </circle>
-            <text x="0" y="17" fill="#065f46" fontFamily="IBM Plex Mono" fontSize="6" fontWeight="bold" textAnchor="middle">LC</text>
+            <text x="0" y="17" fill={isLoadCellFail ? '#991b1b' : '#065f46'} fontFamily="IBM Plex Mono" fontSize="6" fontWeight="bold" textAnchor="middle">
+              {isLoadCellFail ? 'ERR' : 'LC'}
+            </text>
             {/* Label */}
-            <rect x="-36" y="-24" width="72" height="18" fill="#10b981" rx="3" />
-            <text x="0" y="-12" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="8" fontWeight="bold" textAnchor="middle">LC-01: {loadLeft.toFixed(1)}kg</text>
-            <line x1="0" y1="-6" x2="0" y2="0" stroke="#10b981" strokeWidth="1.5" />
+            <rect x="-42" y="-24" width="84" height="18" fill={isLoadCellFail ? '#ef4444' : '#10b981'} rx="3" />
+            <text x="0" y="-12" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="8" fontWeight="bold" textAnchor="middle">
+              {isLoadCellFail ? '🚨 LC-01 IMBAL' : `LC-01: ${loadLeft.toFixed(1)}kg`}
+            </text>
+            <line x1="0" y1="-6" x2="0" y2="0" stroke={isLoadCellFail ? '#ef4444' : '#10b981'} strokeWidth="1.5" />
           </g>
 
           {/* ── LOAD CELL 2 (LC-02) ── */}
           <g transform="translate(440, 133)">
-            <rect x="-20" y="0" width="40" height="28" fill="#ffffff" stroke="#10b981" strokeWidth="2.5" rx="3" />
-            <rect x="-14" y="28" width="28" height="20" fill="#d1fae5" stroke="#10b981" strokeWidth="1.5" rx="1" />
-            <circle cx="0" cy="14" r="6" fill="#10b981" opacity="0.8">
-              {isRunning && <animate attributeName="r" values="5;7;5" dur="2s" repeatCount="indefinite" begin="0.5s" />}
+            <rect
+              x="-20" y="0" width="40" height="28"
+              fill={isLoadCellFail ? '#fee2e2' : '#ffffff'}
+              stroke={isLoadCellFail ? '#ef4444' : '#10b981'}
+              strokeWidth={isLoadCellFail ? '3.5' : '2.5'}
+              rx="3"
+            />
+            <rect
+              x="-14" y="28" width="28" height="20"
+              fill={isLoadCellFail ? '#fca5a5' : '#d1fae5'}
+              stroke={isLoadCellFail ? '#ef4444' : '#10b981'}
+              strokeWidth="1.5"
+              rx="1"
+            />
+            <circle cx="0" cy="14" r="6" fill={isLoadCellFail ? '#ef4444' : '#10b981'} opacity="0.85">
+              {isRunning && <animate attributeName="r" values="5;8;5" dur={isLoadCellFail ? '0.8s' : '2s'} repeatCount="indefinite" begin="0.4s" />}
             </circle>
-            <text x="0" y="17" fill="#065f46" fontFamily="IBM Plex Mono" fontSize="6" fontWeight="bold" textAnchor="middle">LC</text>
-            <rect x="-36" y="-24" width="72" height="18" fill="#10b981" rx="3" />
-            <text x="0" y="-12" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="8" fontWeight="bold" textAnchor="middle">LC-02: {loadRight.toFixed(1)}kg</text>
-            <line x1="0" y1="-6" x2="0" y2="0" stroke="#10b981" strokeWidth="1.5" />
+            <text x="0" y="17" fill={isLoadCellFail ? '#991b1b' : '#065f46'} fontFamily="IBM Plex Mono" fontSize="6" fontWeight="bold" textAnchor="middle">
+              {isLoadCellFail ? 'ERR' : 'LC'}
+            </text>
+            <rect x="-42" y="-24" width="84" height="18" fill={isLoadCellFail ? '#ef4444' : '#10b981'} rx="3" />
+            <text x="0" y="-12" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="8" fontWeight="bold" textAnchor="middle">
+              {isLoadCellFail ? '🚨 LC-02 IMBAL' : `LC-02: ${loadRight.toFixed(1)}kg`}
+            </text>
+            <line x1="0" y1="-6" x2="0" y2="0" stroke={isLoadCellFail ? '#ef4444' : '#10b981'} strokeWidth="1.5" />
           </g>
 
           {/* ── IMU SENSOR (MPU-6050) ── */}
           <g transform="translate(500, 108)">
-            <rect x="-14" y="-12" width="28" height="24" fill="#065f46" stroke="#ef4444" strokeWidth="2" rx="3" />
+            <rect x="-14" y="-12" width="28" height="24" fill={isBearingFail ? '#7f1d1d' : '#065f46'} stroke={isBearingFail ? '#f87171' : '#ef4444'} strokeWidth={isBearingFail ? '3' : '2'} rx="3" />
             <circle cx="0" cy="0" r="5" fill="#ef4444" opacity="0.9">
-              {isRunning && <animate attributeName="opacity" values="0.5;1;0.5" dur="0.8s" repeatCount="indefinite" />}
+              {isRunning && <animate attributeName="opacity" values="0.4;1;0.4" dur={isBearingFail ? '0.4s' : '0.8s'} repeatCount="indefinite" />}
             </circle>
             <text x="0" y="3" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="5" fontWeight="bold" textAnchor="middle">IMU</text>
-            <rect x="-28" y="-30" width="56" height="14" fill="#ef4444" rx="3" />
-            <text x="0" y="-20" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="7" fontWeight="bold" textAnchor="middle">VIB: {vibration.toFixed(1)}mm/s</text>
+            <rect x="-34" y="-30" width="68" height="14" fill="#ef4444" rx="3" />
+            <text x="0" y="-20" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="7" fontWeight="bold" textAnchor="middle">
+              {isBearingFail ? '🚨 BEARING VIB' : `VIB: ${vibration.toFixed(1)}g`}
+            </text>
             <line x1="0" y1="-16" x2="0" y2="-12" stroke="#ef4444" strokeWidth="1.5" />
           </g>
 
@@ -306,21 +373,37 @@ const LiveConveyorTwin: React.FC<TwinProps> = ({ speed, loadLeft, loadRight, vib
 
           {/* ── MOTOR BODY ── */}
           <g transform="translate(606, 140)">
-            <rect x="0" y="0" width="100" height="44" fill="url(#dtMotor)" stroke="#1d4ed8" strokeWidth="2.5" rx="5" />
-            <rect x="100" y="6" width="18" height="32" fill="#1d4ed8" stroke="#1e3a8a" strokeWidth="2" rx="3" />
+            <rect
+              x="0" y="0" width="100" height="44"
+              fill={isMotorFail ? '#7f1d1d' : 'url(#dtMotor)'}
+              stroke={isMotorFail ? '#ef4444' : '#1d4ed8'}
+              strokeWidth={isMotorFail ? '3.5' : '2.5'}
+              rx="5"
+            />
+            <rect
+              x="100" y="6" width="18" height="32"
+              fill={isMotorFail ? '#b91c1c' : '#1d4ed8'}
+              stroke={isMotorFail ? '#ef4444' : '#1e3a8a'}
+              strokeWidth="2"
+              rx="3"
+            />
             {/* Motor fins */}
             {[14, 30, 46, 62, 78].map((x) => (
-              <line key={`fin-${x}`} x1={x} y1="0" x2={x} y2="44" stroke="#60a5fa" strokeWidth="2" opacity="0.4" />
+              <line key={`fin-${x}`} x1={x} y1="0" x2={x} y2="44" stroke={isMotorFail ? '#fca5a5' : '#60a5fa'} strokeWidth="2" opacity="0.4" />
             ))}
             {/* Motor status indicator */}
-            <circle cx="90" cy="10" r="4" fill={isRunning ? '#10b981' : '#ef4444'}>
-              {isRunning && <animate attributeName="opacity" values="0.5;1;0.5" dur="1s" repeatCount="indefinite" />}
+            <circle cx="90" cy="10" r="4" fill={isMotorFail ? '#ef4444' : (isRunning ? '#10b981' : '#ef4444')}>
+              <animate attributeName="opacity" values="0.3;1;0.3" dur={isMotorFail ? '0.4s' : '1s'} repeatCount="indefinite" />
             </circle>
-            <text x="50" y="26" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="8" fontWeight="bold" textAnchor="middle">12V DC MOTOR</text>
+            <text x="50" y="26" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="8" fontWeight="bold" textAnchor="middle">
+              {isMotorFail ? 'MOTOR JAM / FAIL' : '12V DC MOTOR'}
+            </text>
             {/* Motor label */}
-            <rect x="10" y="-22" width="80" height="16" fill="#1e40af" rx="3" />
-            <text x="50" y="-11" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="8" fontWeight="bold" textAnchor="middle">{current.toFixed(1)}A / {isRunning ? 'RUN' : 'STOP'}</text>
-            <line x1="50" y1="-6" x2="50" y2="0" stroke="#1e40af" strokeWidth="1.5" />
+            <rect x="0" y="-22" width="100" height="16" fill={isMotorFail ? '#ef4444' : '#1e40af'} rx="3" />
+            <text x="50" y="-11" fill="#ffffff" fontFamily="IBM Plex Mono" fontSize="8" fontWeight="bold" textAnchor="middle">
+              {isMotorFail ? '🚨 JAM / OVERLOAD' : `${current.toFixed(1)}A / ${isRunning ? 'RUN' : 'STOP'}`}
+            </text>
+            <line x1="50" y1="-6" x2="50" y2="0" stroke={isMotorFail ? '#ef4444' : '#1e40af'} strokeWidth="1.5" />
           </g>
 
           {/* ── TRACKING ROLLER ── */}

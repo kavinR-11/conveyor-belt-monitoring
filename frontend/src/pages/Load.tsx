@@ -75,7 +75,7 @@ export const Load: React.FC = () => {
                   <div className="h-full bg-primary rounded" style={{ width: `${cell.share}%` }} />
                 </div>
                 <div className="grid grid-cols-2 gap-1 mt-2 font-label-sm text-label-sm text-secondary">
-                  <span>ZERO TARE:</span><span className="font-bold text-on-surface">{cell === l.cell1Kg ? '+0.12' : '-0.05'} kg</span>
+                  <span>ZERO TARE:</span><span className="font-bold text-on-surface">{cell.label === 'LC-01' ? '+0.12' : '-0.05'} kg</span>
                   <span>CALIBRATION FACTOR:</span><span className="font-bold text-on-surface">{cell.val > l.cell2Kg ? '419.2' : '421.0'} cnt/g</span>
                   <span>EXCITATION:</span><span className="font-bold text-on-surface">4.99 VDC</span>
                 </div>

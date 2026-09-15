@@ -18,6 +18,7 @@ import { Analytics } from './pages/Analytics';
 import { Maintenance } from './pages/Maintenance';
 import { Alerts } from './pages/Alerts';
 import { Settings } from './pages/Settings';
+import { EmergencyBanner } from './components/common/EmergencyBanner';
 import { useTelemetry } from './hooks/useTelemetry';
 
 const AppInner: React.FC = () => {
@@ -29,6 +30,7 @@ const AppInner: React.FC = () => {
       <Sidebar />
       <div className="pl-64">
         <main className="relative pt-16 bg-surface-container-lowest min-h-screen p-space-md border-l border-outline-variant">
+          <EmergencyBanner alert={frame.alert} />
           <div className="flex flex-col w-full gap-space-md font-body-md text-on-surface">
             <Routes>
               <Route path="/"              element={<Overview />} />

@@ -87,10 +87,15 @@ class AlertManager:
             return None
 
         # Build alert record
+        failed_component = prediction.get("failed_component", "CONVEYOR SUBSYSTEM")
+        failure_cause = prediction.get("failure_cause", "")
+
         alert = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "severity": severity,
             "classification": classification,
+            "failed_component": failed_component,
+            "failure_cause": failure_cause,
             "confidence": confidence,
             "anomaly_score": prediction.get("anomaly_score", 0.0),
             "is_anomaly": prediction.get("is_anomaly", False),
@@ -123,13 +128,13 @@ class AlertManager:
             alert["sms_sent"] = sent_count > 0 or not sms_service.configured
             alert["sms_recipients"] = len(recipients)
 
-            # Update cooldown
+            # Update cooldown (shorter for emergencies)
             cooldown_key = f"{severity}:{classification}"
             self.last_sms_sent[cooldown_key] = time.time()
 
             logger.warning(
-                "ALERT [%s] %s (conf: %.1f%%) — SMS sent to %d/%d contacts",
-                severity, classification, confidence * 100,
+                "ALERT [%s] Part: %s | %s (conf: %.1f%%) — SMS sent to %d/%d contacts",
+                severity, failed_component, classification, confidence * 100,
                 sent_count, len(recipients),
             )
 
@@ -144,34 +149,30 @@ class AlertManager:
         """Check if SMS should be sent based on escalation rules and cooldown."""
         consecutive = self.consecutive_counts.get(classification, 1)
 
-        # EMERGENCY: always send (subject to cooldown)
-        if severity == "EMERGENCY":
-            pass  # proceed to cooldown check
-        # CRITICAL: require 2+ consecutive detections
-        elif severity == "CRITICAL":
-            if consecutive < 2:
-                return False
-        # WARNING: require 5+ consecutive
-        elif severity == "WARNING":
-            if consecutive < 5:
-                return False
-        else:
-            return False
-
-        # Rate limit check
+        # Rate limit check: emergencies 60s cooldown, warnings/critical 180s cooldown
         cooldown_key = f"{severity}:{classification}"
         last_sent = self.last_sms_sent.get(cooldown_key, 0)
-        if time.time() - last_sent < self.sms_cooldown_seconds:
+        cooldown_limit = 60 if severity == "EMERGENCY" else 180
+
+        if time.time() - last_sent < cooldown_limit:
             return False
 
-        return True
+        # EMERGENCY: immediate dispatch
+        if severity == "EMERGENCY":
+            return True
+        # CRITICAL: require 2+ consecutive detections
+        elif severity == "CRITICAL":
+            return consecutive >= 2
+        # WARNING: require 4+ consecutive detections
+        elif severity == "WARNING":
+            return consecutive >= 4
+
+        return False
 
     def _get_recipients(self, severity: str) -> list[dict]:
         """Get SMS recipients based on severity level."""
-        if severity == "EMERGENCY":
-            return self.alert_contacts  # Everyone
-        elif severity == "CRITICAL":
-            return self.alert_contacts  # Admin + maintenance
+        if severity in ("EMERGENCY", "CRITICAL"):
+            return self.alert_contacts  # Admin + Maintenance crew
         elif severity == "WARNING":
             return [c for c in self.alert_contacts if c["role"] == "admin"]
         return []
@@ -180,30 +181,32 @@ class AlertManager:
         """Format SMS message for an alert."""
         severity = alert["severity"]
         classification = alert["classification"]
+        failed_component = alert.get("failed_component", "CONVEYOR")
+        failure_cause = alert.get("failure_cause", "")
         confidence = alert["confidence"]
         ts = alert["timestamp"][:19].replace("T", " ")
         snap = alert["sensor_snapshot"]
 
         if severity == "EMERGENCY":
-            prefix = "🚨 EMERGENCY"
+            prefix = "🚨 EMERGENCY PART FAILURE"
         elif severity == "CRITICAL":
-            prefix = "⚠️ CRITICAL"
+            prefix = "⚠️ CRITICAL DEFECT"
         else:
             prefix = "📢 WARNING"
 
         msg = (
             f"{prefix} — CV-IRON-01\n"
-            f"Defect: {classification}\n"
-            f"Confidence: {confidence*100:.1f}%\n"
+            f"Failing Part: {failed_component}\n"
+            f"Defect: {classification} ({confidence*100:.1f}%)\n"
+            f"Cause: {failure_cause}\n"
             f"Time: {ts} UTC\n"
             f"---\n"
             f"Vib L/R: {snap.get('vibration_left_g', 'N/A')}/{snap.get('vibration_right_g', 'N/A')} g\n"
             f"Load L/R: {snap.get('load_left_kg', 'N/A')}/{snap.get('load_right_kg', 'N/A')} kg\n"
             f"Current: {snap.get('current_A', 'N/A')} A\n"
             f"Motor: {snap.get('motor_state', 'N/A')}\n"
-            f"E-Stop: {'ACTIVE' if snap.get('estop_active') else 'OFF'}\n"
             f"---\n"
-            f"Action required. Check SCADA dashboard."
+            f"Immediate inspection required on {failed_component}."
         )
         return msg
 
