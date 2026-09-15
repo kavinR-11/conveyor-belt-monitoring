@@ -18,68 +18,93 @@ An end-to-end industrial SCADA & Digital Twin platform for conveyor belts featur
 
 ## 🔌 Connecting Raspberry Pi to the Dashboard
 
-You can stream real sensor data from your Raspberry Pi directly into the dashboard.
+## 🌐 System Architecture
 
-### 1. Hardware Connections (Raspberry Pi Pinout)
-
-| Component | Sensor | Raspberry Pi Pins | Interface |
-|---|---|---|---|
-| **Vibration Left** | MPU6050 | SDA (GPIO 2), SCL (GPIO 3), VCC (3.3V), GND, AD0 -> GND (`0x68`) | I2C |
-| **Vibration Right** | MPU6050 | SDA (GPIO 2), SCL (GPIO 3), VCC (3.3V), GND, AD0 -> 3.3V (`0x69`) | I2C |
-| **Current / Voltage** | INA219 | SDA (GPIO 2), SCL (GPIO 3), VCC (3.3V/5V), GND (`0x40`) | I2C |
-| **Load Cell Left** | HX711 | DT -> GPIO 5, SCK -> GPIO 6, VCC (5V), GND | GPIO |
-| **Load Cell Right** | HX711 | DT -> GPIO 13, SCK -> GPIO 19, VCC (5V), GND | GPIO |
-| **IR Alignment Left** | Optical Beam | Signal -> GPIO 17, VCC (5V), GND | GPIO |
-| **IR Alignment Right**| Optical Beam | Signal -> GPIO 27, VCC (5V), GND | GPIO |
-| **Emergency Stop** | E-Stop Button | Switch -> GPIO 24 to GND (internal pull-up) | GPIO |
-| **Rotary Encoder** | Speed Sensor | Channel A -> GPIO 22, Channel B -> GPIO 23 | GPIO |
+```
+[Physical Sensors]
+  - Dual MPU6050 (Vibration Left & Right via I2C)
+  - Dual HX711 (Load Cell 1 & 2 via GPIO)
+  - INA219 (Motor Current / Power via I2C)
+  - Optical IR & E-Stop
+         │
+         ▼ (I2C / GPIO)
+  ┌──────────────┐
+  │  ESP32 Node  │ (Runs firmware/esp32_sensor_node.ino)
+  └──────┬───────┘
+         │
+         ▼ (MQTT over Wi-Fi, Topic: conveyor/cv-iron-01/telemetry)
+  ┌──────────────┐
+  │ Raspberry Pi │ (Runs Mosquitto Broker + firmware/rpi_mqtt_gateway.py)
+  └──────┬───────┘
+         │
+         ▼ (HTTP POST /api/telemetry at 10 Hz)
+  ┌──────────────┐
+  │  PC Backend  │ (FastAPI + Random Forest 98.38% + Twilio SMS)
+  └──────┬───────┘
+         │
+         ▼ (WebSocket real-time stream)
+  ┌──────────────┐
+  │ SCADA Dash   │ (React Digital Twin, Gauges, Anomaly Alerts)
+  └──────────────┘
+```
 
 ---
 
-### 2. Raspberry Pi Software Setup
+## 🔌 Sensor & Hardware Setup
+
+### 1. ESP32 Sensor Wiring
+
+Wire your physical sensors to the **ESP32** microcontroller:
+
+| Component | Sensor Module | ESP32 GPIO Pin | Notes |
+|---|---|---|---|
+| **Vibration Left** | MPU6050 #1 | SDA: GPIO 21, SCL: GPIO 22 | AD0 pin to GND (`0x68`) |
+| **Vibration Right** | MPU6050 #2 | SDA: GPIO 21, SCL: GPIO 22 | AD0 pin to 3.3V (`0x69`) |
+| **Motor Current** | INA219 | SDA: GPIO 21, SCL: GPIO 22 | Default address (`0x40`) |
+| **Load Cell 1 (Left)** | HX711 #1 | DT: GPIO 16, SCK: GPIO 4 | 5V & GND |
+| **Load Cell 2 (Right)**| HX711 #2 | DT: GPIO 17, SCK: GPIO 18 | 5V & GND |
+| **Left Tracking IR** | Optical Switch | Signal: GPIO 34 | Internal pull-up |
+| **Right Tracking IR**| Optical Switch | Signal: GPIO 35 | Internal pull-up |
+| **Emergency Stop** | E-Stop Button | Pin: GPIO 32 to GND | Active LOW |
+
+Flash the firmware:
+1. Open [`firmware/esp32_sensor_node/esp32_sensor_node.ino`](file:///c:/users/reach/conveyor-belt-monitoring/firmware/esp32_sensor_node/esp32_sensor_node.ino) in Arduino IDE.
+2. Set your `WIFI_SSID`, `WIFI_PASSWORD`, and `MQTT_BROKER` (your Raspberry Pi's IP address).
+3. Upload to your ESP32.
+
+---
+
+### 2. Raspberry Pi Setup (MQTT Broker + Gateway)
 
 On your Raspberry Pi:
 
 ```bash
-# 1. Enable I2C on Raspberry Pi
-sudo raspi-config
-# Navigate to: Interface Options -> I2C -> Enable -> Finish
+# 1. Install and start Mosquitto MQTT broker
+sudo apt update
+sudo apt install -y mosquitto mosquitto-clients python3-pip
+sudo systemctl enable mosquitto
+sudo systemctl start mosquitto
 
-# 2. Install Python sensor packages
-sudo apt-get update
-sudo apt-get install -y python3-pip python3-smbus i2c-tools
-pip3 install paho-mqtt smbus2 RPi.GPIO hx711 adafruit-circuitpython-ina219
+# Allow external connections from ESP32:
+sudo nano /etc/mosquitto/conf.d/local.conf
+# Add these two lines:
+#   listener 1883
+#   allow_anonymous true
+sudo systemctl restart mosquitto
+
+# 2. Install gateway dependencies
+pip3 install paho-mqtt
+
+# 3. Run the gateway forwarder to your PC dashboard
+# (Replace 192.168.1.3 with your PC's IP address)
+python3 firmware/rpi_mqtt_gateway.py --dashboard http://192.168.1.3:8000
 ```
 
----
-
-### 3. Running Telemetry Ingestion
-
-Find the local IP address of the PC running the dashboard (e.g. `192.168.1.50` via `ipconfig` on Windows).
-
-#### Option A: Direct HTTP Streaming (Recommended — No Broker Needed)
-Run on Raspberry Pi:
-```bash
-python3 firmware/rpi_sensor_publisher.py --http http://192.168.1.50:8000
-```
-
-#### Option B: Simulated Hardware (Testing Without Physical Sensors)
-If sensors are not yet wired up, you can test the full pipeline using simulated physics:
-```bash
-python3 firmware/rpi_sensor_publisher.py --simulate --http http://192.168.1.50:8000
-```
-
-#### Option C: MQTT Streaming
-If using the included Mosquitto broker:
-```bash
-python3 firmware/rpi_sensor_publisher.py --use-mqtt --broker 192.168.1.50 --port 1883
-```
-
-When live telemetry frames arrive from the Raspberry Pi:
-1. The backend immediately marks the hardware as **LIVE**.
-2. Real-time ML inference runs on every sensor frame.
-3. If an anomaly or defect occurs, an SMS alert is sent to maintenance.
-4. The dashboard gauges and digital twin reflect the physical conveyor state in real time!
+The Raspberry Pi will:
+1. Receive telemetry published by the ESP32 over MQTT.
+2. Forward it immediately via HTTP POST to the PC's FastAPI backend.
+3. The dashboard digital twin and gauges update in real time at 10 Hz!
+4. If the ML engine detects any fault or belt misalignment, an SMS is immediately sent to maintenance.
 
 ---
 

@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+# =============================================================================
+# Raspberry Pi MQTT Gateway — Bridges ESP32 Sensors to Dashboard Backend
+# =============================================================================
+# Architecture:
+#   [ESP32 Sensors] ──(MQTT Wi-Fi)──► [Raspberry Pi Broker]
+#                                             │
+#                                   (rpi_mqtt_gateway.py)
+#                                             │ (HTTP POST /api/telemetry)
+#                                             ▼
+#                                  [FastAPI Backend & SCADA Dashboard]
+#
+# Runs on the Raspberry Pi:
+#   1. Subscribes to local Mosquitto broker: conveyor/+/telemetry
+#   2. Receives sensor frames from ESP32
+#   3. Forwards them in real-time to the PC Backend for ML inference & SMS alerting
+#
+# Usage:
+#   pip3 install paho-mqtt
+#   python3 rpi_mqtt_gateway.py --dashboard http://192.168.1.3:8000
+# =============================================================================
+
+import argparse
+import json
+import logging
+import sys
+import time
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone
+
+import paho.mqtt.client as mqtt
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("rpi-gateway")
+
+# Defaults
+DEFAULT_MQTT_BROKER = "127.0.0.1"      # Localhost on Raspberry Pi (Mosquitto)
+DEFAULT_MQTT_PORT   = 1883
+DEFAULT_MQTT_TOPIC  = "conveyor/+/telemetry"
+DEFAULT_DASHBOARD   = "http://192.168.1.3:8000"
+
+
+class RPiGateway:
+    def __init__(self, broker: str, port: int, topic: str, dashboard_url: str):
+        self.broker = broker
+        self.port = port
+        self.topic = topic
+        self.telemetry_api = f"{dashboard_url.rstrip('/')}/api/telemetry"
+        self.forwarded_count = 0
+        self.error_count = 0
+        self.last_log_time = time.time()
+
+        self.mqtt_client = mqtt.Client(
+            client_id="rpi-edge-gateway",
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        )
+        self.mqtt_client.on_connect = self.on_connect
+        self.mqtt_client.on_message = self.on_message
+        self.mqtt_client.on_disconnect = self.on_disconnect
+
+    def on_connect(self, client, userdata, flags, rc, properties=None):
+        if rc == 0:
+            logger.info("Connected to local Mosquitto broker at %s:%d", self.broker, self.port)
+            logger.info("Subscribing to topic: %s", self.topic)
+            client.subscribe(self.topic, qos=1)
+        else:
+            logger.error("Failed to connect to MQTT broker (rc=%d)", rc)
+
+    def on_disconnect(self, client, userdata, flags, rc, properties=None):
+        logger.warning("Disconnected from MQTT broker (rc=%d). Reconnecting...", rc)
+
+    def on_message(self, client, userdata, msg):
+        """Called whenever an ESP32 sensor frame arrives via MQTT."""
+        try:
+            payload_str = msg.payload.decode("utf-8")
+            frame = json.loads(payload_str)
+
+            # Ensure timestamp and source tagging
+            if "timestamp" not in frame:
+                frame["timestamp"] = datetime.now(timezone.utc).isoformat()
+            frame["gateway"] = "RaspberryPi-Edge"
+
+            # Forward to PC Backend API
+            self.forward_to_dashboard(frame)
+
+        except Exception as e:
+            logger.error("Error processing MQTT message: %s", e)
+
+    def forward_to_dashboard(self, frame: dict):
+        """HTTP POST to FastAPI /api/telemetry for real-time ML & SCADA update."""
+        data = json.dumps(frame).encode("utf-8")
+        req = urllib.request.Request(
+            self.telemetry_api,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "RPi-Gateway/1.0",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                self.forwarded_count += 1
+
+                # Check if backend triggered an alert
+                alert = result.get("alert")
+                if alert:
+                    logger.warning(
+                        "[ALERT DISPATCHED] %s — Defect: %s | Conf: %.1f%% | SMS Sent: %s",
+                        alert.get("severity"),
+                        alert.get("classification"),
+                        alert.get("confidence", 0) * 100,
+                        alert.get("sms_sent"),
+                    )
+
+                # Periodic throughput log
+                now = time.time()
+                if now - self.last_log_time >= 5.0:
+                    pred = result.get("prediction", {})
+                    logger.info(
+                        "Forwarded %d frames | ESP32 Vib: %.2f/%.2f g | Load: %.2f kg | ML: %s (%.1f%%)",
+                        self.forwarded_count,
+                        frame.get("vibration_left_g", 0),
+                        frame.get("vibration_right_g", 0),
+                        frame.get("total_load_kg", 0),
+                        pred.get("classification", "NORMAL"),
+                        pred.get("confidence", 0) * 100,
+                    )
+                    self.last_log_time = now
+
+        except urllib.error.URLError as e:
+            self.error_count += 1
+            if self.error_count % 10 == 1:
+                logger.warning("Failed to reach Dashboard at %s: %s", self.telemetry_api, e)
+
+    def run(self):
+        logger.info("=" * 65)
+        logger.info("  Raspberry Pi MQTT Edge Gateway")
+        logger.info("  ESP32 MQTT Source   : %s:%d (Topic: %s)", self.broker, self.port, self.topic)
+        logger.info("  Target Dashboard API: %s", self.telemetry_api)
+        logger.info("=" * 65)
+
+        logger.info("Connecting to MQTT broker...")
+        try:
+            self.mqtt_client.connect(self.broker, self.port, keepalive=60)
+        except Exception as e:
+            logger.error("Cannot connect to local broker at %s:%d: %s", self.broker, self.port, e)
+            logger.info("Make sure mosquitto is running on Raspberry Pi: sudo systemctl start mosquitto")
+            sys.exit(1)
+
+        self.mqtt_client.loop_forever()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Raspberry Pi MQTT to Dashboard Forwarder")
+    parser.add_argument("--broker", default=DEFAULT_MQTT_BROKER, help="Local MQTT broker IP on RPi (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=DEFAULT_MQTT_PORT, help="MQTT broker port (default: 1883)")
+    parser.add_argument("--topic", default=DEFAULT_MQTT_TOPIC, help="MQTT topic to subscribe to")
+    parser.add_argument("--dashboard", default=DEFAULT_DASHBOARD, help="Dashboard backend URL (e.g. http://192.168.1.3:8000)")
+    args = parser.parse_args()
+
+    gateway = RPiGateway(
+        broker=args.broker,
+        port=args.port,
+        topic=args.topic,
+        dashboard_url=args.dashboard,
+    )
+    try:
+        gateway.run()
+    except KeyboardInterrupt:
+        logger.info("\nGateway stopped.")
+
+
+if __name__ == "__main__":
+    main()
