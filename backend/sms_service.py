@@ -4,6 +4,7 @@
 
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("sms_service")
@@ -19,6 +20,9 @@ class SMSService:
 
     def configure(self):
         """Initialize Twilio client from environment variables."""
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).resolve().parent / ".env")
+
         account_sid = os.getenv("TWILIO_ACCOUNT_SID")
         auth_token = os.getenv("TWILIO_AUTH_TOKEN")
         self.from_number = os.getenv("TWILIO_FROM_NUMBER")
