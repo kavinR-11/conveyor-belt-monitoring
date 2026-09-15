@@ -19,7 +19,9 @@ ai/models/*.joblib
 *.joblib
 *.pkl
 *.h5
-*.onnx
+# Allow custom vision model (<15MB)
+!best.onnx
+!ai/models/*.onnx
 
 # Large raw datasets (>50MB)
 Datasetsih*.json

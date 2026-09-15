@@ -20,8 +20,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import base64
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Query
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -37,11 +39,12 @@ logging.basicConfig(
 logger = logging.getLogger("main")
 
 # ---------------------------------------------------------------------------
-# ML Engine + Alert Manager (lazy imports to avoid circular)
+# ML Engine + Alert Manager + Vision Engine
 # ---------------------------------------------------------------------------
 from backend.ml_engine import engine as ml_engine
 from backend.alert_manager import alert_manager
 from backend.sms_service import sms_service
+from backend.vision_engine import vision_engine, CLASS_NAMES
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +230,9 @@ async def lifespan(app: FastAPI):
     # Load ML models
     ml_engine.load_models()
 
+    # Load Vision YOLOv8n-seg model
+    vision_engine.load_model()
+
     # Configure SMS
     sms_service.configure()
     alert_manager.configure()
@@ -242,6 +248,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     task.cancel()
+    vision_engine.release_camera()
     logger.info("System shutdown complete")
 
 
@@ -328,6 +335,89 @@ async def ml_status():
         "loaded": ml_engine.loaded,
         "features": ml_engine.features,
         "classes": ml_engine.classes,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Vision System Endpoints (YOLOv8n-seg Belt Inspection)
+# ---------------------------------------------------------------------------
+@app.get("/api/vision/status", tags=["vision"])
+async def vision_status():
+    """Returns current vision AI status, inference latency, and detection counts."""
+    return {
+        "model_loaded": vision_engine.loaded,
+        "model_path": vision_engine.model_path,
+        "classes": CLASS_NAMES,
+        "fps": vision_engine.last_fps,
+        "latency_ms": vision_engine.last_inference_time_ms,
+        "source_mode": vision_engine.source_mode,
+        "camera_open": vision_engine.cap.isOpened() if vision_engine.cap else False,
+        "latest_detections": vision_engine.latest_detections,
+        "defect_summary": vision_engine.latest_defect_summary,
+    }
+
+
+@app.get("/api/vision/stream", tags=["vision"])
+async def vision_stream(conf: float = Query(0.35, ge=0.1, le=0.95)):
+    """Live MJPEG video stream with YOLOv8n-seg overlays."""
+    return StreamingResponse(
+        vision_engine.generate_mjpeg_stream(conf_threshold=conf),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+class VisionSourceRequest(BaseModel):
+    mode: str  # 'webcam' or 'simulation'
+
+
+@app.post("/api/vision/source", tags=["vision"])
+async def set_vision_source(req: VisionSourceRequest):
+    """Switch camera source between physical webcam and synthetic conveyor simulator."""
+    if req.mode in ("webcam", "simulation"):
+        vision_engine.source_mode = req.mode
+        if req.mode == "webcam":
+            vision_engine.init_camera()
+        return {"status": "ok", "mode": vision_engine.source_mode}
+    return {"status": "error", "message": "Mode must be 'webcam' or 'simulation'"}
+
+
+@app.post("/api/vision/detect_image", tags=["vision"])
+async def detect_image(
+    file: UploadFile = File(...),
+    conf: float = Query(0.35, ge=0.1, le=0.95)
+):
+    """Upload any conveyor belt image file to test YOLOv8n-seg model directly."""
+    import cv2
+    import numpy as np
+    contents = await file.read()
+    nparr = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    if img is None:
+        return {"error": "Invalid image file format"}
+
+    annotated, detections = vision_engine.predict(img, conf_threshold=conf)
+    ret, jpeg = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+    b64_img = base64.b64encode(jpeg.tobytes()).decode("utf-8") if ret else ""
+
+    # Check for emergency tears or worker safety hazards
+    emergency_detections = [d for d in detections if d.get("is_emergency")]
+    if emergency_detections:
+        for ed in emergency_detections:
+            alert_manager.process_prediction({
+                "severity": "EMERGENCY",
+                "classification": f"VISION {ed['class_name'].upper()}",
+                "confidence": ed["confidence"],
+                "failed_component": f"CONVEYOR BELT ({ed['class_name'].upper()})",
+                "failure_cause": f"Optical camera detected {ed['class_name']} on belt (Conf: {ed['confidence']*100:.1f}%)",
+            }, raw_frame={})
+
+    return {
+        "detections": detections,
+        "count": len(detections),
+        "annotated_image_base64": f"data:image/jpeg;base64,{b64_img}",
+        "latency_ms": vision_engine.last_inference_time_ms,
+        "has_emergency": len(emergency_detections) > 0,
     }
 
 
