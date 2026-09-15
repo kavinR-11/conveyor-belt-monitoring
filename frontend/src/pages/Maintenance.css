@@ -1,0 +1,128 @@
+/* Maintenance Page — SCADA styling matching reference */
+
+.maintenance-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Top Grid: Status Hero (left) + Schedule (right) */
+.maint-top-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 14px;
+}
+
+.maint-status-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.maint-status-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 16px;
+  flex: 1;
+}
+
+.maint-wrench-icon {
+  margin-bottom: 16px;
+}
+
+.maint-status-badge-hero {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  padding: 6px 16px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.maint-status-subtitle {
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 0 0 18px 0;
+}
+
+.maint-countdown-box {
+  width: 100%;
+  background: #090e15;
+  border: 1px solid #162436;
+  border-radius: 4px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.countdown-label {
+  font-size: 9px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.countdown-val {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+/* Schedule Card */
+.maint-schedule-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.maint-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.maint-status-pill.scheduled {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.maint-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #22c55e;
+}
+
+/* Bottom History Card */
+.maint-history-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.maint-type-tag {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  background: #111a26;
+  color: #94a3b8;
+  border: 1px solid #1e2c3e;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+@media (max-width: 1000px) {
+  .maint-top-grid {
+    grid-template-columns: 1fr;
+  }
+}
