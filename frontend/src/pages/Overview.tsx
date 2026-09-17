@@ -267,6 +267,14 @@ export const Overview: React.FC = () => {
                     status: isEmergency ? 'ALARM TRIGGERED' : 'ACTIVE',
                     style: isEmergency ? 'danger' : 'info',
                   },
+                  {
+                    name: 'RPI WEBCAM VISION (YOLOv8)',
+                    status: frame.vision?.defect_detected
+                      ? `${frame.vision.defect_type?.toUpperCase() || 'DEFECT'} DETECTED`
+                      : 'MONITORING (RPI)',
+                    style: frame.vision?.defect_detected ? 'danger' : 'normal',
+                    pulse: frame.vision?.defect_detected,
+                  },
                 ];
 
                 return items.map((item) => (

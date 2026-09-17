@@ -41,7 +41,7 @@ logger = logging.getLogger("rpi-gateway")
 # Defaults
 DEFAULT_MQTT_BROKER = "127.0.0.1"      # Localhost on Raspberry Pi (Mosquitto)
 DEFAULT_MQTT_PORT   = 1883
-DEFAULT_MQTT_TOPIC  = "conveyor/+/telemetry"
+DEFAULT_MQTT_TOPIC  = "conveyor/#"     # Subscribes to telemetry, vision, and status topics
 DEFAULT_DASHBOARD   = "http://192.168.1.3:8000"
 
 
@@ -75,7 +75,7 @@ class RPiGateway:
         logger.warning("Disconnected from MQTT broker (rc=%d). Reconnecting...", rc)
 
     def on_message(self, client, userdata, msg):
-        """Called whenever an ESP32 sensor frame arrives via MQTT."""
+        """Called whenever an ESP32 sensor or RPi vision frame arrives via MQTT."""
         try:
             payload_str = msg.payload.decode("utf-8")
             frame = json.loads(payload_str)
@@ -85,14 +85,28 @@ class RPiGateway:
                 frame["timestamp"] = datetime.now(timezone.utc).isoformat()
             frame["gateway"] = "RaspberryPi-Edge"
 
-            # Forward to PC Backend API
+            # Check if this is a vision defect packet from local webcam model
+            if "vision" in msg.topic or "defect" in frame or "defect_type" in frame:
+                if "vision" not in frame:
+                    defect_name = frame.get("defect_type") or frame.get("defect", "DEFECT")
+                    frame["vision"] = {
+                        "defect_detected": True,
+                        "defect_type": defect_name,
+                        "confidence": float(frame.get("confidence", 0.9)),
+                        "details": frame.get("details", f"RPi webcam vision flagged {defect_name}"),
+                        "is_emergency": str(defect_name).lower() in ("tear", "human"),
+                        "source": "RPI_WEBCAM",
+                    }
+                logger.warning("🚨 [VISION DEFECT] Forwarding %s to Web Dashboard", frame["vision"].get("defect_type"))
+
+            # Forward to Web Dashboard Backend API
             self.forward_to_dashboard(frame)
 
         except Exception as e:
             logger.error("Error processing MQTT message: %s", e)
 
     def forward_to_dashboard(self, frame: dict):
-        """HTTP POST to FastAPI /api/telemetry for real-time ML & SCADA update."""
+        """HTTP/HTTPS POST to FastAPI /api/telemetry for real-time ML & SCADA update."""
         data = json.dumps(frame).encode("utf-8")
         req = urllib.request.Request(
             self.telemetry_api,
@@ -104,7 +118,13 @@ class RPiGateway:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
+            import ssl
+            # Allow flexible SSL verification if user hosts behind self-signed certificate
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            with urllib.request.urlopen(req, timeout=3.0, context=ctx) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
                 self.forwarded_count += 1
 

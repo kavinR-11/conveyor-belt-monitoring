@@ -99,10 +99,40 @@ export function useTelemetry(): TelemetryState {
     });
   }, []);
 
+  // Dynamic WebSocket URL resolver for web and local deployment
+  function getWebSocketUrl(): string {
+    const envWsUrl = import.meta.env.VITE_WS_URL;
+    if (envWsUrl) return envWsUrl;
+
+    const envBackendUrl = import.meta.env.VITE_BACKEND_URL;
+    if (envBackendUrl) {
+      try {
+        const url = new URL(envBackendUrl);
+        const proto = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${proto}//${url.host}/ws`;
+      } catch {
+        // fallback
+      }
+    }
+
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const proto = isHttps ? 'wss:' : 'ws:';
+    const host = (typeof window !== 'undefined' && window.location.hostname) || 'localhost';
+    const port = (typeof window !== 'undefined' && window.location.port) || '';
+
+    // If running in local Vite development mode (5173/3000), connect to default backend port 8000
+    if (port === '5173' || port === '3000' || port === '4173') {
+      return `${proto}//${host}:8000/ws`;
+    }
+
+    // When hosted on web (production / reverse proxy on port 80 or 443), connect to /ws on current host
+    const portSuffix = port ? `:${port}` : '';
+    return `${proto}//${host}${portSuffix}/ws`;
+  }
+
   // WebSocket Live Connection
   useEffect(() => {
-    const host = window.location.hostname || 'localhost';
-    const wsUrl = `ws://${host}:8000/ws`;
+    const wsUrl = getWebSocketUrl();
     let ws: WebSocket | null = null;
     let fallbackInterval: ReturnType<typeof setInterval> | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -127,6 +157,7 @@ export function useTelemetry(): TelemetryState {
               const s = data.sensors;
               const ml = data.ml;
               const alert = data.alert;
+              const vision = data.vision;
 
               const vibRms = Math.max(s.vibration_left_g || 1.85, s.vibration_right_g || 1.88);
               const totalLoad = s.total_load_kg || ((s.load_left_kg || 0) + (s.load_right_kg || 0));
@@ -135,9 +166,9 @@ export function useTelemetry(): TelemetryState {
 
               let machineState: 'RUNNING' | 'STOPPED' | 'WARNING' | 'CRITICAL' | 'FAULT' = 'RUNNING';
               if (s.estop_active) machineState = 'STOPPED';
-              else if (ml?.severity === 'EMERGENCY') machineState = 'FAULT';
-              else if (ml?.severity === 'CRITICAL') machineState = 'CRITICAL';
-              else if (ml?.severity === 'WARNING') machineState = 'WARNING';
+              else if (ml?.severity === 'EMERGENCY' || alert?.severity === 'EMERGENCY' || vision?.is_emergency) machineState = 'FAULT';
+              else if (ml?.severity === 'CRITICAL' || alert?.severity === 'CRITICAL') machineState = 'CRITICAL';
+              else if (ml?.severity === 'WARNING' || alert?.severity === 'WARNING') machineState = 'WARNING';
 
               const activeAlert = alert || (ml && ml.severity !== 'NORMAL' ? {
                 severity: ml.severity,
@@ -182,6 +213,7 @@ export function useTelemetry(): TelemetryState {
                 isMock: false,
                 ml,
                 alert: activeAlert,
+                vision: vision || null,
               });
 
               setTrendVibration(h => appendTrendPoint(h, vibRms));

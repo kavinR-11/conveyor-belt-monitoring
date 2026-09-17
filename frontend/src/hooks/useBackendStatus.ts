@@ -10,7 +10,19 @@
 import { useState, useEffect } from 'react';
 import type { ConnectionState } from '../types/telemetry';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000';
+function getBackendUrl(): string {
+  if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
+  if (typeof window !== 'undefined') {
+    const port = window.location.port;
+    if (port === '5173' || port === '3000' || port === '4173') {
+      return `http://${window.location.hostname}:8000`;
+    }
+    return '';
+  }
+  return 'http://localhost:8000';
+}
+
+const BACKEND_URL = getBackendUrl();
 const POLL_INTERVAL_MS = 5000;
 
 export interface BackendStatus {

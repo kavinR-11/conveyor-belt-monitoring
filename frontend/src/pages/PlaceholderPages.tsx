@@ -56,13 +56,6 @@ export const Electrical: React.FC = () => (
   />
 );
 
-export const CameraInspection: React.FC = () => (
-  <PlaceholderPage
-    title="CAMERA INSPECTION"
-    description="Live webcam feed and YOLOv8n-seg belt defect detection results. Will be implemented when the YOLO inference pipeline is integrated."
-  />
-);
-
 export const DigitalTwin: React.FC = () => (
   <PlaceholderPage
     title="DIGITAL TWIN"

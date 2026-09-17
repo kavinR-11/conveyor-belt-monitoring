@@ -85,6 +85,16 @@ export interface ActiveAlert {
   timestamp: string;
 }
 
+export interface VisionInspection {
+  defect_detected: boolean;
+  defect_type?: string;
+  confidence?: number;
+  is_emergency?: boolean;
+  details?: string;
+  source?: string;
+  timestamp?: string;
+}
+
 export interface TelemetryFrame {
   vibration: VibrationReading;
   load: LoadReading;
@@ -99,6 +109,8 @@ export interface TelemetryFrame {
   ml?: MLPrediction;
   /** Active alert with component failure details */
   alert?: ActiveAlert | null;
+  /** Edge optical inspection from Raspberry Pi webcam */
+  vision?: VisionInspection | null;
 }
 
 // -----------------------------------------------------------------------------

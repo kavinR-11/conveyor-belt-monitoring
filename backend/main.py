@@ -45,6 +45,7 @@ from backend.ml_engine import engine as ml_engine
 from backend.alert_manager import alert_manager
 from backend.sms_service import sms_service
 from backend.vision_engine import vision_engine, CLASS_NAMES
+from backend.mqtt_subscriber import mqtt_subscriber
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +143,26 @@ async def process_and_broadcast_frame(frame: dict, source: str = "SIMULATOR") ->
     # Process alerts
     alert = alert_manager.process_prediction(prediction, frame)
 
+    # Check for vision defect data forwarded from Raspberry Pi edge webcam
+    vision_data = frame.get("vision") or {}
+    vision_defect = vision_data.get("defect_type") or vision_data.get("defect") or frame.get("vision_defect")
+    if vision_defect and str(vision_defect).upper() not in ("NONE", "CLEAR", "NORMAL"):
+        v_conf = float(vision_data.get("confidence", 0.92))
+        v_name = str(vision_defect).strip()
+        v_sev = "EMERGENCY" if v_name.lower() in ("tear", "human") else "CRITICAL"
+        v_comp = "CONVEYOR BELT (SURFACE TEAR - RPI VISION)" if v_name.lower() == "tear" else f"CONVEYOR BELT ({v_name.upper()} - RPI VISION)"
+        v_cause = vision_data.get("details") or f"Raspberry Pi webcam vision model detected {v_name} ({v_conf*100:.1f}%)"
+
+        vision_alert = alert_manager.process_prediction({
+            "severity": v_sev,
+            "classification": f"VISION {v_name.upper()}",
+            "confidence": v_conf,
+            "failed_component": v_comp,
+            "failure_cause": v_cause,
+        }, frame)
+        if vision_alert:
+            alert = vision_alert
+
     # Build message for frontend
     message = {
         "type": "telemetry",
@@ -165,6 +186,17 @@ async def process_and_broadcast_frame(frame: dict, source: str = "SIMULATOR") ->
         },
         "ml": prediction,
     }
+
+    if vision_data:
+        message["vision"] = {
+            "defect_detected": bool(vision_data.get("defect_detected", bool(vision_defect))),
+            "defect_type": vision_defect or "NONE",
+            "confidence": float(vision_data.get("confidence", 0.0)),
+            "is_emergency": str(vision_defect).lower() in ("tear", "human"),
+            "details": vision_data.get("details", ""),
+            "source": vision_data.get("source", "RPI_WEBCAM"),
+            "timestamp": frame.get("timestamp", datetime.now(timezone.utc).isoformat()),
+        }
 
     # If there's an alert, include it
     if alert:
@@ -243,12 +275,16 @@ async def lifespan(app: FastAPI):
     # Start background telemetry loop
     task = asyncio.create_task(telemetry_loop())
 
+    # Start MQTT subscriber to receive telemetry from Raspberry Pi over Wi-Fi
+    mqtt_subscriber.set_callback(process_and_broadcast_frame)
+    mqtt_subscriber.start(asyncio.get_running_loop())
+
     logger.info("System ready — accepting connections")
     yield
 
     # Shutdown
     task.cancel()
-    vision_engine.release_camera()
+    mqtt_subscriber.stop()
     logger.info("System shutdown complete")
 
 
@@ -439,3 +475,23 @@ async def websocket_endpoint(websocket: WebSocket):
             logger.info("WS received: %s", data[:100])
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
+
+
+# ---------------------------------------------------------------------------
+# Serve Frontend Static Assets (when built for Web Hosting)
+# ---------------------------------------------------------------------------
+frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    from fastapi.staticfiles import StaticFiles
+    from starlette.responses import FileResponse
+
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        target = frontend_dist / full_path
+        if full_path and target.exists() and target.is_file():
+            return FileResponse(target)
+        return FileResponse(frontend_dist / "index.html")
