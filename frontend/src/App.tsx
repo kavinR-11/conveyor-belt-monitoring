@@ -11,6 +11,7 @@ import { Vibration } from './pages/Vibration';
 import { Load } from './pages/Load';
 import { BeltSpeed } from './pages/BeltSpeed';
 import { Electrical } from './pages/Electrical';
+import { CameraInspection } from './pages/CameraInspection';
 import { DigitalTwin } from './pages/DigitalTwin';
 import { PredictiveHealth } from './pages/PredictiveHealth';
 import { Analytics } from './pages/Analytics';
@@ -37,6 +38,7 @@ const AppInner: React.FC = () => {
               <Route path="/load"          element={<Load />} />
               <Route path="/belt-speed"    element={<BeltSpeed />} />
               <Route path="/electrical"    element={<Electrical />} />
+              <Route path="/camera"        element={<CameraInspection />} />
               <Route path="/digital-twin"  element={<DigitalTwin />} />
               <Route path="/predictive"    element={<PredictiveHealth />} />
               <Route path="/analytics"     element={<Analytics />} />

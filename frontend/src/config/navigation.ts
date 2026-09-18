@@ -55,6 +55,15 @@ export const NAV_ITEMS: NavItem[] = [
     icon: 'bolt',
   },
   {
+    id: 'camera',
+    label: 'Camera Inspection',
+    path: '/camera',
+    segment: 'camera',
+    icon: 'videocam',
+    badge: 'LIVE',
+    badgeStyle: 'live',
+  },
+  {
     id: 'digital-twin',
     label: 'Digital Twin',
     path: '/digital-twin',

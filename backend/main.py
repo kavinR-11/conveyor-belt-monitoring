@@ -285,6 +285,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     task.cancel()
     mqtt_subscriber.stop()
+    vision_engine.release_camera()
     logger.info("System shutdown complete")
 
 
